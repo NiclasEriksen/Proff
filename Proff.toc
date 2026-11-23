@@ -1,0 +1,45 @@
+## Interface: 16001
+## Title: Proff
+## Notes: The guild's recipes: who can craft what, from the profession links you open.
+## Author: Hjelp
+#@debug@
+## Version: dev
+#@end-debug@
+#@non-debug@
+# ## Version: @project-version@
+#@end-non-debug@
+## X-Flavor: forever
+## SavedVariables: ProffDB, ProffDebugDB
+## Category: Professions
+## IconTexture: Interface\Icons\INV_Scroll_03
+
+# Load order matters: each file only uses what is above it
+Core\Init.lua
+Locale\enUS.lua
+Core\Debug.lua
+Core\Events.lua
+Core\DB.lua
+Core\Items.lua
+Core\Spells.lua
+Core\Pack.lua
+Core\Guild.lua
+Core\Comm.lua
+Core\Recipes.lua
+Core\Index.lua
+Core\Skills.lua
+Core\Capture.lua
+Core\Sync.lua
+Core\Commands.lua
+UI\GuildPage.lua
+UI\GuildMembers.lua
+UI\GuildTab.lua
+
+# Developer tools: /proff debug, /proff probe. The packager strips this block and .pkgmeta leaves Dev/ out.
+#@do-not-package@
+Dev\Errors.lua
+Dev\Probe.lua
+Dev\Verify.lua
+Dev\Commands.lua
+#@end-do-not-package@
+
+Main.lua

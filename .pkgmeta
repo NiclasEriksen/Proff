@@ -1,0 +1,23 @@
+# BigWigsMods packager config: https://github.com/BigWigsMods/packager/wiki
+package-as: Proff
+
+enable-nolib-creation: no
+
+# Development files that don't belong in the zip players install.
+ignore:
+  - tools
+  - docs
+  - CLAUDE.md
+  - README.md
+  - .claude
+  - .luarc.json
+  - .github
+  - .githooks
+  - Dev
+  - COMMIT.md
+
+# The changelog is written by the release workflow (.github/workflows/release.yml, tools/changelog.sh):
+# commit subjects only, with the Claude credit once at the top; or COMMIT.md when it's for the tag.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

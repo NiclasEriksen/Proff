@@ -1,0 +1,60 @@
+# Push a tag to publish:
+#   v0.1.0         -> release
+#   v0.1.0-beta1   -> beta
+#   v0.1.0-alpha1  -> alpha
+# The tag replaces @project-version@ in the TOC. Interface 16001 is detected
+# as WoW Forever (CurseForge game version 1.60.1) by packager v2.6+.
+#
+# Repository secrets (Settings > Secrets and variables > Actions):
+#   CF_API_KEY     CurseForge API token
+#   CF_PROJECT_ID  CurseForge project ID (kept out of the TOC)
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: the changelog is built from commits since the last tag
+
+      # Only a tag on main, newer than the one before it (a typo like v0.8.40 would publish out of order).
+      - name: Tag guard
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          git fetch -q origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$tag isn't on main"; exit 1; }
+          prev=$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)
+          if [[ -n $prev ]]; then
+            newest=$(printf '%s\n%s\n' "${prev#v}" "${tag#v}" | sort -V | tail -1)
+            [[ $newest == "${tag#v}" && $prev != "$tag" ]] || { echo "::error::$tag isn't newer than $prev"; exit 1; }
+          fi
+
+      # The changelog players read on CurseForge and GitHub (tools/changelog.sh: run it before tagging to see it):
+      # one line per commit subject since the previous tag, without the developer-only ones, {{...}} as *****,
+      # .github/changelog-fix.txt's rewordings, and the Claude credit once at the top; or COMMIT.md, as written,
+      # when it's for this tag (tools/changelog.sh --draft writes it to edit). .pkgmeta points the packager at
+      # this file (manual-changelog).
+      - name: Changelog
+        run: |
+          bash tools/changelog.sh "${GITHUB_REF_NAME}" > CHANGELOG.md
+          cat CHANGELOG.md
+
+      - uses: BigWigsMods/packager@v2
+        with:
+          args: -p ${{ secrets.CF_PROJECT_ID }}

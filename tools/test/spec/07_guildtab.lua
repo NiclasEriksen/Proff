@@ -1,0 +1,348 @@
+-- The profession window's Guild tab: where it sits, covering the window and leaving it, the list, search,
+-- the profession filter, the tooltip, and the reagents' names that ingredient search needs.
+return function(test, H)
+    local function World(quirks, opts)
+        local w = H.World()
+        for k, v in pairs(quirks or {}) do w.quirks[k] = v end
+        w:AddPlayer("Kari Berg", { profs = { [171] = { 2330, 2331, 3447, 17556 } } })
+        w:AddPlayer("Siri Dahl", { profs = { [171] = { 2330 }, [333] = { 7418, 13661 } } })
+        local ola = w:AddClient("Ola Nord", opts or { profs = { [197] = { 2387, 2393 } } })
+        w:Settle()
+        return w, ola
+    end
+    -- Ola's own Tailoring, Kari's and Siri's links: then the window open on Ola's Tailoring.
+    local function Stocked(quirks)
+        local w, ola = World(quirks)
+        ola:OpenProfession(197)
+        ola:ClickLink("Kari Berg", 171)
+        ola:ClickLink("Siri Dahl", 171)
+        ola:ClickLink("Siri Dahl", 333)
+        ola:CloseProfession()
+        w:Run(11) -- (the reagents' names: asked for, and come)
+        ola:OpenProfession(197)
+        return w, ola
+    end
+    local function Names(ola)
+        local out = {}
+        for _, line in ipairs(ola:Shown()) do out[#out + 1] = line:match("^(.-) |") end
+        return table.concat(out, ", ")
+    end
+
+    test("the tab comes with the window, under its profession tabs (as many as the character has)", function()
+        local w = H.World()
+        w:AddPlayer("Kari Berg", { profs = { [171] = { 2330 } } })
+        local ola = w:AddClient("Ola Nord", { profs = { [197] = { 2387 }, [333] = { 7418 } } })
+        w:Settle()
+        H.eq(ola:GuildTab(), nil, "nothing before a profession opens")
+        H.ok(ola.ns.Events:Listening("TRADE_SKILL_SHOW", ola.ns.GuildTab))
+        ola:OpenProfession(197)
+        local tab, pf = ola:GuildTab(), ola.env.ProfessionsFrame
+        local tabs = pf.rightProfessionTabs
+        H.ok(tab and tab:IsVisible())
+        H.eq(tab.points[1][2], tabs[2], "under the last: Enchanting")
+        H.eq(tab.points[1][3], "BOTTOMLEFT")
+        H.eq(tab.points[1][5], -2)
+        -- Their art, copied: the same textures, ours the icon, the highlight hidden.
+        local atlases = {}
+        for _, r in ipairs({ tab:GetRegions() }) do atlases[#atlases + 1] = tostring(r:GetAtlas()) .. (r:IsShown() and "" or "(hidden)") end
+        H.eq(table.concat(atlases, " "), "common-sidetab nil common-sidetab-mask common-sidetab-selected(hidden)"
+            .. " common-sidetab-selected common-sidetab-hover")
+        H.eq(tab.icon.tex, "Interface\\Icons\\INV_Shirt_GuildTabard_01")
+        H.eq(tab.icon.mask.atlas, "common-sidetab-mask")
+        H.eq(select(1, tab:GetSize()), 55)
+        H.eq(tab:GetFrameLevel(), tabs[2]:GetFrameLevel(), "at their level")
+        H.eq(ola:Logged("Tab", "art copied: 6 textures, from line 333"), 1, "from a tab that isn't the open one")
+        H.ok(ola:Logged("Tab", "their tabs have no size yet") >= 1, "the first layout came before theirs had a size")
+        -- Every property copied: their second "selected" is shown but not seen on an unselected tab, so ours.
+        local regions = { tab:GetRegions() }
+        H.eq(regions[5]:GetAlpha(), 0)
+        H.eq(regions[5]:GetBlendMode(), "ADD")
+        H.ok(regions[5]:IsShown())
+        H.eq(regions[4], tab.selected)
+        H.no(ola.ns.Events:Listening("TRADE_SKILL_SHOW", ola.ns.GuildTab), "let go: hooks do the rest")
+        H.ok(ola.ns.Events:Listening("TRADE_SKILL_SHOW", ola.ns.Capture))
+        tab:Run("OnEnter")
+        H.match(ola.env.GameTooltip:Said(), "^Guild | Every recipe your guild knows")
+        ola:CloseProfession()
+        -- A profession learned: a tab more, and ours under it.
+        ola.player:Learn(164, { 2662 })
+        ola:OpenProfession(164)
+        H.eq(tab.points[1][2], tabs[3], "under the new last")
+        -- One of theirs hidden while the window shows: ours moves up.
+        tabs[3]:Hide()
+        w:Run(0.1)
+        H.eq(tab.points[1][2], tabs[2])
+        H.eq(ola:Logged("Tab", "attached"), 1)
+    end)
+
+    test("the window opens on its overview (no profession, no TRADE_SKILL_SHOW): the tab is there already", function()
+        local w, ola = World()
+        H.eq(ola:GuildTab(), nil)
+        ola:OpenOverview()
+        local tab, pf = ola:GuildTab(), ola.env.ProfessionsFrame
+        H.ok(pf.BookPage:IsShown())
+        H.eq(ola.window, nil, "no profession open")
+        H.ok(tab and tab:IsVisible(), "attached when the window was made, laid out when it showed")
+        H.eq(tab.points[1][2], pf.rightProfessionTabs[1])
+        H.no(ola.ns.Events:Listening("ADDON_LOADED", ola.ns.GuildTab), "let go once attached")
+        H.no(ola.ns.Events:Listening("TRADE_SKILL_SHOW", ola.ns.GuildTab))
+        ola:OpenGuildTab()
+        H.ok(ola.ns.GuildTab:IsOpen(), "usable from the overview")
+        H.eq(ola:GuildPage().count.text, "0 recipes")
+        ola:CloseProfession()
+        H.no(tab:IsVisible())
+        -- The window already made before we log in (another addon loaded Blizzard's first): attached at login.
+        local w2 = H.World()
+        local kari = w2:AddClient("Kari Berg", { profs = { [197] = { 2387 } },
+            patch = function(env, c) H.MakeProfessionsFrame(c, env) end })
+        w2:Settle()
+        H.ok(kari:GuildTab(), "attached at login")
+        kari:OpenOverview()
+        H.ok(kari:GuildTab():IsVisible())
+    end)
+
+    test("open: covers the window above its highest part, their highlight hidden; their tab, ours, or closing leaves", function()
+        local w, ola = Stocked()
+        local pf = ola.env.ProfessionsFrame
+        local mine = pf.rightProfessionTabs[1]
+        local function Lit(t) return t.highlight:IsShown() and 1 or 0 end
+        H.eq(Lit(mine), 1)
+        ola:OpenGuildTab()
+        H.ok(ola.ns.GuildTab:IsOpen())
+        H.eq(Lit(mine), 0, "theirs looks unselected")
+        local shown = 0
+        for _, r in ipairs({ mine:GetRegions() }) do if r:GetAtlas() == "common-sidetab-selected" and r:IsShown() then shown = shown + 1 end end
+        H.eq(shown, 1, "only its highlight hidden: the second selected texture is part of every tab's look")
+        H.ok(ola:GuildTab().selected:IsShown(), "ours selected")
+        H.ok(pf.CraftingPage:IsShown(), "their page stays: covered, not hidden")
+        local cover = ola.ns.GuildTab:Cover()
+        H.ok(cover:GetFrameLevel() > pf.form:GetFrameLevel(), "above the recipe form")
+        H.ok(pf.CloseButton:GetFrameLevel() > cover:GetFrameLevel(), "the close button above our page")
+        H.eq(cover.bg.atlas, "Profession-Background-Overview", "the window's own background")
+        mine:Press()
+        H.no(ola.ns.GuildTab:IsOpen(), "their tab pressed: back to the profession")
+        H.eq(Lit(mine), 1)
+        H.no(ola:GuildTab().selected:IsShown())
+        H.ok(pf.CloseButton:GetFrameLevel() < cover:GetFrameLevel(), "levels back")
+        ola:OpenGuildTab()
+        ola:GuildTab():Press()
+        H.no(ola.ns.GuildTab:IsOpen(), "ours again: back")
+        H.eq(Lit(mine), 1)
+        ola:OpenGuildTab()
+        ola:CloseProfession()
+        H.no(ola.ns.GuildTab:IsOpen())
+        ola:OpenProfession(197)
+        H.no(ola.ns.GuildTab:IsOpen(), "a window opens on its profession")
+        -- Their OnClick from someone's code (ForeverRecipes calls it), no press: leaves too.
+        ola:OpenGuildTab()
+        mine:OnClick()
+        H.no(ola.ns.GuildTab:IsOpen())
+        -- The overview's tab leaves too; opened over the overview, the page is above its rank bars.
+        ola:OpenGuildTab()
+        pf.ProfessionsOverviewTab:Press()
+        H.no(ola.ns.GuildTab:IsOpen())
+        H.ok(pf.BookPage:IsShown())
+        ola:OpenGuildTab()
+        H.ok(cover:GetFrameLevel() > pf.bars:GetFrameLevel(), "above the rank bars")
+        mine:Press()
+        H.no(ola.ns.GuildTab:IsOpen())
+        -- A press alone (a tab whose click does something else) leaves too.
+        ola:OpenGuildTab()
+        mine:SetScript("OnMouseUp", function() end)
+        mine:Press()
+        H.no(ola.ns.GuildTab:IsOpen())
+    end)
+
+    test("the list: every recipe by name, its profession, who knows it (you first); a count", function()
+        local w, ola = Stocked()
+        ola:OpenGuildTab()
+        local page = ola:GuildPage()
+        H.eq(page.count.text, "8 recipes")
+        H.eq(H.lines(ola:Shown()), table.concat({
+            "Enchant Bracer - Minor Health | Enchanting | Siri Dahl",
+            "Enchant Bracer - Strength | Enchanting | Siri Dahl",
+            "Healing Potion | Alchemy | Kari Berg",
+            "Linen Cloak | Tailoring | You",
+            "Major Healing Potion | Alchemy | Kari Berg",
+            "Minor Healing Potion | Alchemy | Kari Berg, Siri Dahl",
+            "Minor Mana Potion | Alchemy | Kari Berg",
+            "White Linen Shirt | Tailoring | You" }, " | "))
+        H.ok(page.rows[1].icon.tex, "an icon")
+        H.no(page.empty:IsShown())
+    end)
+
+    test("search: a recipe's words, a crafter, an ingredient, the profession; nothing found says so", function()
+        local w, ola = Stocked()
+        ola:OpenGuildTab()
+        ola:Type("healing")
+        H.eq(Names(ola), "Healing Potion, Major Healing Potion, Minor Healing Potion")
+        ola:Type("siri")
+        H.eq(Names(ola), "Enchant Bracer - Minor Health, Enchant Bracer - Strength, Minor Healing Potion")
+        ola:Type("kari minor")
+        H.eq(Names(ola), "Minor Healing Potion, Minor Mana Potion")
+        ola:Type("empty vial")
+        H.eq(Names(ola), "Healing Potion, Minor Healing Potion", "an ingredient")
+        ola:Type("strange dust")
+        H.eq(Names(ola), "Enchant Bracer - Minor Health")
+        ola:Type("tailoring")
+        H.eq(Names(ola), "Linen Cloak, White Linen Shirt")
+        ola:Type("  ")
+        H.eq(ola:GuildPage().count.text, "8 recipes", "blank: everything")
+        ola:Type("unobtainium")
+        H.eq(#ola:Shown(), 0)
+        H.ok(ola:GuildPage().empty:IsShown())
+        H.eq(ola:GuildPage().empty.text, "Nothing matches \"unobtainium\".")
+        H.eq(ola:GuildPage().count.text, "0 recipes")
+    end)
+
+    test("the profession filter: all, or one (its count beside it), with the search", function()
+        local w, ola = Stocked()
+        ola:OpenGuildTab()
+        local dd = ola:GuildPage().filter
+        H.eq(dd.Text.text, "All professions")
+        local menu = H.Menu(dd)
+        local texts = {}
+        for _, e in ipairs(menu) do texts[#texts + 1] = e.text end
+        H.eq(table.concat(texts, ", "), "All professions, Alchemy (4), Enchanting (2), Tailoring (2)")
+        menu[3].Pick()
+        H.eq(dd.Text.text, "Enchanting (2)")
+        H.eq(Names(ola), "Enchant Bracer - Minor Health, Enchant Bracer - Strength")
+        ola:Type("strength")
+        H.eq(Names(ola), "Enchant Bracer - Strength")
+        ola:Type("healing")
+        H.eq(#ola:Shown(), 0, "the filter holds")
+        H.Menu(dd)[1].Pick()
+        H.eq(Names(ola), "Healing Potion, Major Healing Potion, Minor Healing Potion")
+    end)
+
+    test("hover: the recipe's spell tooltip and who knows it; without one, its name and reagents", function()
+        local w, ola = Stocked()
+        ola:OpenGuildTab()
+        ola:Type("minor healing")
+        local row = ola:GuildPage().rows[1]
+        row:Run("OnEnter")
+        local tip = ola.env.GameTooltip
+        H.eq(tip.spell, 2330)
+        H.eq(tip:Said(), "Minor Healing Potion | Reagents: Empty Vial, Peacebloom, Silverleaf |   | Known by (Alchemy): | Kari Berg, Siri Dahl")
+        row:Run("OnLeave")
+        H.eq(tip:Said(), nil)
+        for _, q in ipairs({ false, "error" }) do
+            local w2, kari = Stocked({ spellTooltip = q })
+            kari:OpenGuildTab()
+            kari:Type("minor healing")
+            kari:GuildPage().rows[1]:Run("OnEnter")
+            H.eq(kari.env.GameTooltip:Said(), "Minor Healing Potion | Reagents: | 1 x Silverleaf | 1 x Peacebloom"
+                .. " | 1 x Empty Vial |   | Known by (Alchemy): | Kari Berg, Siri Dahl", tostring(q))
+        end
+        -- The help icon tells what can be searched.
+        ola:GuildPage().help:Run("OnEnter")
+        H.match(tip:Said(), "recipe name, crafter name or ingredient")
+    end)
+
+    test("a long list: only the rows in view exist, moved along as it scrolls", function()
+        local w, ola = Stocked()
+        ola:OpenGuildTab()
+        local page = ola:GuildPage()
+        page.scroll:SetSize(500, 54) -- (three rows tall: four rows made)
+        page:Refresh()
+        H.eq(#page.rows, 8, "made before it was small: kept, the extra hidden")
+        H.eq(#ola:Shown(), 4)
+        H.eq(page.scroll:GetVerticalScrollRange(), 8 * 18 - 54)
+        page.scroll:SetVerticalScroll(36)
+        H.eq(Names(ola), "Healing Potion, Linen Cloak, Major Healing Potion, Minor Healing Potion")
+        H.eq(page.rows[1].points[1][5], -2 * 18, "the first in view at its place")
+        ola:Type("healing")
+        H.eq(page.scroll:GetVerticalScroll(), 0, "a new search starts at the top")
+        local w2, kari = Stocked()
+        kari:OpenGuildTab()
+        kari:GuildPage().scroll:SetSize(500, 54)
+        kari:GuildPage():Refresh()
+        H.eq(#kari:GuildPage().rows, 8)
+    end)
+
+    test("while it's open, a profession stored shows at once; without a guild or recipes it says so", function()
+        local w, ola = World()
+        ola:OpenProfession(197)
+        ola:OpenGuildTab()
+        H.eq(ola:GuildPage().count.text, "2 recipes")
+        ola:ClickLink("Kari Berg", 171)
+        H.ok(ola.ns.GuildTab:IsOpen(), "a link clicked while it's open: still open")
+        H.eq(ola:GuildPage().count.text, "6 recipes")
+        ola.ns.Recipes:Forget("Proffene", "Kari Berg")
+        ola.ns.Bus:Fire("STORED", "Proffene", "x", 1)
+        w:Run(0.5)
+        H.eq(ola:GuildPage().count.text, "2 recipes")
+        local w2, per = World(nil, { guild = false, profs = { [197] = { 2387 } } })
+        per:OpenProfession(197)
+        per:OpenGuildTab()
+        H.eq(per:GuildPage().empty.text, "You're not in a guild.")
+        local w3, kim = World(nil, {})
+        w3:AddPlayer("Nils Tom", { profs = { [164] = { 2662 } } })
+        kim:ClickLink("Nils Tom", 164, { run = 0.1 })
+        kim.ns.Recipes:Forget("Proffene", "Nils Tom")
+        w3:Run(1)
+        kim:OpenGuildTab()
+        H.match(kim:GuildPage().empty.text, "^No guild recipes known yet")
+    end)
+
+    test("a window without profession tabs, a client without the dropdown or the search box: fallbacks", function()
+        local w, kari = Stocked({ noSideTabs = true, missingTemplates = { WowStyle1DropdownTemplate = true,
+            SearchBoxTemplate = true } })
+        local tab = kari:GuildTab()
+        H.eq(tab.points[1][2], kari.env.ProfessionsFrame, "at the window's right edge")
+        H.eq(tab.points[1][3], "TOPRIGHT")
+        kari:OpenGuildTab()
+        local page = kari:GuildPage()
+        H.eq(page.box.templates[1], "InputBoxTemplate")
+        local dd = page.filter
+        H.eq(dd:GetText(), "All professions")
+        dd:Click()
+        H.eq(dd:GetText(), "Alchemy")
+        H.eq(Names(kari), "Healing Potion, Major Healing Potion, Minor Healing Potion, Minor Mana Potion")
+        dd:Click(); dd:Click(); dd:Click()
+        H.eq(dd:GetText(), "All professions", "round again")
+        H.eq(page.count.text, "8 recipes")
+        kari:Type("dust")
+        H.eq(Names(kari), "Enchant Bracer - Minor Health")
+    end)
+
+    test("reagents: read once per recipe, their names asked for and learned; a lost answer is let go", function()
+        local w, ola = World()
+        ola:ClickLink("Kari Berg", 171)
+        local data = ola.ns.DB.data
+        H.eq(data.recipes[2330].r[2447], 1)
+        H.eq(data.recipes[17556].r[13464], 2)
+        H.eq(next(data.recipes[2331].r), nil, "none: an empty list, read")
+        H.eq(ola:Logged("Items", "0 names known now, 8 asked for"), 1)
+        H.eq(data.items[2447], "Peacebloom")
+        H.no(ola:Listening("ITEM_DATA_LOAD_RESULT"), "all came: let go")
+        local read = ola.schematics
+        ola:ClickLink("Siri Dahl", 171)
+        H.eq(ola.schematics, read, "2330's reagents known: not read again")
+        H.eq(ola:Logged("Capture", "reagents of"), 1)
+        ola:Reload()
+        ola:ClickLink("Kari Berg", 171)
+        ola:OpenGuildTab()
+        H.eq(ola.itemRequests, 0, "reagents and names kept across a reload: nothing asked")
+        H.eq(ola.ns.DB.data.items[2447], "Peacebloom")
+
+        local w2, kari = World({ itemsLost = true })
+        kari:ClickLink("Kari Berg", 171)
+        H.ok(kari:Listening("ITEM_DATA_LOAD_RESULT"))
+        w2:Run(11)
+        H.no(kari:Listening("ITEM_DATA_LOAD_RESULT"), "given up after Config.ITEM_WAIT")
+        H.eq(kari:Logged("Items", "didn't come"), 1)
+        H.eq(kari.ns.DB.data.items[2447], nil)
+        -- Opening the tab asks for what's missing again.
+        w2.quirks.itemsLost = nil
+        kari:OpenGuildTab()
+        w2:Run(1)
+        H.eq(kari.ns.DB.data.items[2447], "Peacebloom")
+        kari:Type("peacebloom")
+        H.eq(Names(kari), "Minor Healing Potion")
+        local w3, siri = World({ itemsCached = true })
+        siri:ClickLink("Kari Berg", 171)
+        H.eq(siri.ns.DB.data.items[2447], "Peacebloom", "cached: at once")
+        H.no(siri:Listening("ITEM_DATA_LOAD_RESULT"))
+    end)
+end
