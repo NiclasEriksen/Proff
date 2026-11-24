@@ -32,14 +32,15 @@ local Done = ns.Debounce(0.2, function()
     ns.Bus:Fire("ITEMS")
 end)
 
--- One recipe named (and its reagents read) now if the client can; true when it's done.
-local function Fill(id, w)
+-- One recipe named (and its reagents read) now if the client can; true when it's done. Its reagents go into
+-- `items` (a set): their names are asked for once for all (the log, 2026-11-24: one request a recipe before).
+local function Fill(id, w, items)
     local names = ns.DB:Recipes()
     local name, icon, cat = Spells.Look(id, w.prof)
     if not name then return false end
     local reagents = ns.Capture.Reagents(id)
     names[id] = { n = name, i = icon, l = w.line, c = cat, r = reagents }
-    if reagents then ns.Items:Want(reagents, true) end
+    for item in pairs(reagents or {}) do items[item] = true end
     return true
 end
 
@@ -54,7 +55,11 @@ local function OnLoaded(_, _, id, success)
     if not w then return end
     Spells.pending[id] = nil
     Spells.waiting = Spells.waiting - 1
-    if success ~= false and Fill(id, w) then Done() end
+    local items = {}
+    if success ~= false and Fill(id, w, items) then
+        Done()
+        if next(items) then ns.Items:Want(items, true) end
+    end
     if Spells.waiting <= 0 then
         ns.Log("Spells", "every recipe name asked for came")
         Stop()
@@ -65,11 +70,11 @@ end
 -- named now, the rest asked for. Returns how many are on their way.
 function Spells:Want(ids, line, prof)
     if ns.DB.data.readOnly then return 0 end
-    local names, named, asked = ns.DB:Recipes(), 0, {}
+    local names, named, asked, items = ns.DB:Recipes(), 0, {}, {}
     for id in pairs(ids) do
         if not names[id] and not self.pending[id] then
             local w = { line = line, prof = prof }
-            if Fill(id, w) then
+            if Fill(id, w, items) then
                 named = named + 1
             elseif type(C_Spell) == "table" and type(C_Spell.RequestLoadSpellData) == "function" then
                 asked[#asked + 1] = { id, w }
@@ -77,7 +82,11 @@ function Spells:Want(ids, line, prof)
         end
     end
     if named > 0 then Done() end
-    if #asked == 0 then return self.waiting end
+    if next(items) then ns.Items:Want(items, true) end
+    if #asked == 0 then
+        if named > 0 then ns.Log("Spells", "%d recipes named now, 0 asked for", named) end
+        return self.waiting
+    end
     if self.waiting == 0 and not ns.Events:On("SPELL_DATA_LOAD_RESULT", Spells, OnLoaded) then return 0 end
     for _, a in ipairs(asked) do
         self.pending[a[1]] = a[2]
