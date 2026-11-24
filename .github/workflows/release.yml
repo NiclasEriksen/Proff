@@ -41,8 +41,10 @@ jobs:
             || { echo "::error::$tag isn't on main"; exit 1; }
           prev=$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)
           if [[ -n $prev ]]; then
-            newest=$(printf '%s\n%s\n' "${prev#v}" "${tag#v}" | sort -V | tail -1)
-            [[ $newest == "${tag#v}" && $prev != "$tag" ]] || { echo "::error::$tag isn't newer than $prev"; exit 1; }
+            # "-" as "~": sort -V puts 0.1.0~beta1 before 0.1.0 (a plain "-" sorts it after)
+            a=${prev#v}; b=${tag#v}
+            newest=$(printf '%s\n%s\n' "${a//-/\~}" "${b//-/\~}" | sort -V | tail -1)
+            [[ $newest == "${b//-/\~}" && $prev != "$tag" ]] || { echo "::error::$tag isn't newer than $prev"; exit 1; }
           fi
 
       # The changelog players read on CurseForge and GitHub (tools/changelog.sh: run it before tagging to see it):
