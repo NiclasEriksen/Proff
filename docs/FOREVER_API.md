@@ -121,6 +121,14 @@ with the date and build; one that matters to every addon goes in Dyreparken's do
   Proff's own stored ranks). So a 1 means "has it": Core/Skills.lua reads it so, and a rank Proff stored (own
   window, a link, sync) fills it in; secondary professions come only from Proff's own data. `/proff debug` logs one raw member row a
   query ("Skills: a member row"), in case the real skill is in another field.
+  **`ExpandGuildTradeSkillHeader` and `CollapseGuildTradeSkillHeader` fire `GUILD_TRADESKILL_UPDATE` inside the
+  call, before they return** (the log, 2026-11-24, build 71037: one read finished ten times in the same frame, a
+  handler re-entered per header). Core/Skills.lua ignores the updates its own expanding causes and reads once after.
+  `GetProfessions()` lists every profession with its base skill line: Herbalism 182, Cooking 185, Enchanting 333,
+  Fishing 356, and **First Aid 129** (a guildmate's skill sheet, 2026-11-24: First Aid 225/225, Skinning 393).
+- **Relay sync works between two real clients** (2026-11-24, build 71037, our log): our hello, their index, our
+  request for 6 entries, 5 professions and a skill sheet back within 7 s; ours they lacked pushed (4 D, 1 K, the
+  biggest 192 bytes in one part). Relayed recipes were all in the client's spell cache: named at once (155 of 155).
 - Addon messages: Dyreparken's "Addon messages" section (255 bytes, 10 per prefix +1/s, Trial accounts can't send,
   "First Surname" senders, GUILD only). Proff's Core/Comm.lua follows it.
 

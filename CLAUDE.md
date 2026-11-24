@@ -154,11 +154,14 @@ tools/              check.sh, lint_config.lua, types.lua, log.lua, db.lua, test/
 - **Skill sheets** (the user, 2026-11-23: "a combination of A and B; skill level being stale is better than no
   skill level"): each Proff user's own levels (`GetProfessions`, secondaries too) are read at login and when their
   own profession is stored, kept as `members[who].skills`, and relayed by everyone like a profession (sync's `K`,
-  key line 0). The Members view takes the highest of the server's, a link's and a sheet's. Whether
-  `GetProfessions` lists First Aid on Forever is unprobed (`skills:own` logs what it reads).
+  key line 0). The Members view takes the highest of the server's, a link's and a sheet's. `GetProfessions`
+  lists First Aid too (129, seen 2026-11-24).
 - Whose a linked window is: the link's GUID on the roster, then the window's name, then `GetPlayerInfoByGUID`'s, then
   a first name only one member has. A first name two members share is "couldn't tell", not a guess.
 
 ## Open questions (ask the user before deciding)
 
-- Relay sync is untested between two real clients.
+- Relay sync worked between two real clients (2026-11-24, seen from our side only): read the other player's log
+  when it comes (their side: hello heard, our pushes stored).
+- Storing a guildmate's profession from a clicked link, and relaying it, is untested in game: a Forever bug makes
+  profession links in chat unclickable for most (2026-11-24). Try it once the game is fixed.
