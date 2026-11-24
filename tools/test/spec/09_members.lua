@@ -70,6 +70,7 @@ return function(test, H)
         H.eq(M.count.text, "5 members")
         H.eq(next(ola.skillOpen), nil, "the headers we opened, collapsed again")
         H.eq(ola:Logged("Skills", "expanded: 4 professions, 6 member rows, 4 headers expanded"), 1)
+        H.eq(ola:Logged("Skills", " professions, "), 1, "read once: the updates our own expanding fires ignored")
         H.no(ola.ns.Events:Listening("GUILD_TRADESKILL_UPDATE"), "heard only while asking")
         -- A column's head: the icon only, its name on hover.
         local head = M.heads[1]
@@ -79,6 +80,15 @@ return function(test, H)
         -- A row's hover: each profession with its skill, and the recipes Proff knows.
         M.rows[3]:Run("OnEnter")
         H.eq(H.StripColors(ola.env.GameTooltip:Said()), "Ola Nord | Tailoring 150 (1 recipes known)")
+    end)
+
+    test("a server that answers expanding a moment later (not inside the call): read once, closed again", function()
+        local w, ola = World({ skillAsync = true })
+        Members(ola)
+        H.eq(Shown(ola), "Arne Dahl: 250 - - - | Kari Berg: 280 - 120 - | Ola Nord: - - - 150 | Per Smed: - 75 - -"
+            .. " | Siri Dahl: 280 - - -")
+        H.eq(ola:Logged("Skills", " professions, "), 1)
+        H.eq(next(ola.skillOpen), nil)
     end)
 
     test("sorting by a profession: who has it first, highest skill first, then first name; the name head sorts back", function()

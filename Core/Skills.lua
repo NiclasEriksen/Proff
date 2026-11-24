@@ -72,6 +72,7 @@ end
 
 local expanded = {}
 local function Finish(why)
+    if not Skills.busy then return end
     ns.Events:Off("GUILD_TRADESKILL_UPDATE", Skills)
     Skills.busy = false
     local profs, members, rows = Read()
@@ -88,16 +89,21 @@ local function Finish(why)
 end
 
 local function OnUpdate()
-    if not Skills.busy then return end
-    local _, _, rows, collapsed = Read()
+    -- (Forever fires this inside Expand/Collapse, before they return (the log, 2026-11-24): what we cause
+    -- ourselves while expanding is ignored, and read once after)
+    if not Skills.busy or Skills.expanding then return end
+    local _, _, _, collapsed = Read()
     -- (a header someone left open shows its members already: the collapsed ones still need opening, 2026-11-23)
     if #collapsed == 0 or #expanded > 0 then return Finish(#expanded > 0 and "expanded" or "answered") end
     -- Collapsed: opened (theirs to keep as it was), and read again now or at the next update.
+    Skills.expanding = true
     for _, line in ipairs(collapsed) do
         if pcall(ExpandGuildTradeSkillHeader, line) then expanded[#expanded + 1] = line end
     end
-    local _, _, now, still = Read()
-    if now > rows and #still == 0 then Finish("expanded") end
+    Skills.expanding = false
+    -- (all open now: what's listed is all there is, members or not; else the next update says)
+    local _, _, _, still = Read()
+    if #still == 0 then Finish("expanded") end
 end
 
 ------------------------------------------------------------------------------

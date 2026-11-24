@@ -93,8 +93,15 @@ return function(c, env)
         if w.quirks.guildRecipes == false or not c.player.guild then return end
         Answer()
     end
-    env.ExpandGuildTradeSkillHeader = function(line) c.skillOpen[line] = true; Build(); Answer() end
-    env.CollapseGuildTradeSkillHeader = function(line) c.skillOpen[line] = nil; Build(); Answer() end
+    -- Forever fires GUILD_TRADESKILL_UPDATE inside Expand/Collapse, before it returns (the log, 2026-11-24: each
+    -- expand re-entered the handler); w.quirks.skillAsync: a moment later instead.
+    local function Changed()
+        Build()
+        if w.quirks.skillAsync then return Answer() end
+        c:Fire("GUILD_TRADESKILL_UPDATE")
+    end
+    env.ExpandGuildTradeSkillHeader = function(line) c.skillOpen[line] = true; Changed() end
+    env.CollapseGuildTradeSkillHeader = function(line) c.skillOpen[line] = nil; Changed() end
     env.GetNumGuildTradeSkill = function() return #(c.guildSkills or {}) end
     -- skillID, isCollapsed, iconTexture, headerName, numOnline, numVisible, numPlayers, playerName,
     -- playerNameWithRealm, class, online, zone, skill, classFileName, isMobile, isAway
