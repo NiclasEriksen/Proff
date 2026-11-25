@@ -183,3 +183,35 @@ function H.MakeProfessionsFrame(c, env)
     c.env = env
     return P.ProfessionsFrame(c)
 end
+
+-- Forever's guild window (/proff probe communities, 2026-11-25): retail's CommunitiesFrame, made when Blizzard's
+-- guild UI loads (ADDON_LOADED "Blizzard_Communities"). Here only its member detail panel (GuildMemberDetailFrame,
+-- 212x260: Name, Level, CloseButton), filled by its DisplayMember(clubId, memberInfo) when a name is clicked.
+function P.CommunitiesFrame(c)
+    local cf = P.NewFrame(c, "Frame", nil, nil, "")
+    cf.name = "CommunitiesFrame"
+    rawset(c.env, "CommunitiesFrame", cf)
+    cf.shown = false
+    cf.size = { 814, 426 }
+    local d = P.NewFrame(c, "Frame", nil, cf)
+    d.size = { 212, 260 }
+    d.shown = false
+    d.Name = d:CreateFontString(nil, "ARTWORK")
+    d.Name:SetPoint("TOPLEFT", d, "TOPLEFT", 17, -18)
+    d.Level = d:CreateFontString(nil, "ARTWORK")
+    d.CloseButton = P.NewFrame(c, "Button", nil, d)
+    d.CloseButton:SetScript("OnClick", function() d:Hide() end)
+    rawset(d, "DisplayMember", function(self, _, info)
+        self.Name:SetText(info.name)
+        self.Level:SetText("Level 60")
+    end)
+    cf.GuildMemberDetailFrame = d
+    c:Fire("ADDON_LOADED", "Blizzard_Communities")
+    return cf
+end
+
+-- The guild window made before the addon loads (another addon loaded Blizzard's guild UI first).
+function H.MakeCommunitiesFrame(c, env)
+    c.env = env
+    return P.CommunitiesFrame(c)
+end

@@ -33,6 +33,7 @@ Core\Commands.lua
 UI\GuildPage.lua
 UI\GuildMembers.lua
 UI\GuildTab.lua
+UI\MemberDetail.lua
 
 # Developer tools: /proff debug, /proff probe. The packager strips this block and .pkgmeta leaves Dev/ out.
 #@do-not-package@
