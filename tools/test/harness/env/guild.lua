@@ -51,6 +51,24 @@ return function(c, env)
             end, c)
         end,
     }
+    -- The guild's club (C_Club, what Blizzard's guild window lists): every member, offline too, with their first two
+    -- primary professions (by skill line) at rank 1 (Forever's, as the professions roster's). w.quirks.noClub: none.
+    if not w.quirks.noClub then
+        env.C_Club = {
+            GetGuildClubId = function() return c.player.guild and 215736082 or nil end,
+            GetClubMembers = function(club)
+                if club ~= 215736082 or not c.player.guild then return {} end
+                local ids = {}
+                for i = 1, #(c.rosterCache or {}) do ids[i] = i end
+                return ids
+            end,
+            GetMemberInfo = function(club, id)
+                local p = club == 215736082 and c.player.guild and (c.rosterCache or {})[id]
+                if not p then return nil end
+                return c:ClubMember(p)
+            end,
+        }
+    end
     -- The guild's professions roster (Cataclysm's guild profession list): a header per profession, collapsed
     -- (as Forever hands them, probed 2026-11-23), its members under it once expanded (Expand/
     -- CollapseGuildTradeSkillHeader, each answered by GUILD_TRADESKILL_UPDATE a moment later). A member's skill:

@@ -10,29 +10,34 @@ local ns = select(2, ...)
 --                                probe roster logs it, and a GUID that doesn't look like one is ignored)
 --   Guild.firsts[first] = key   (a first name only one member has; false when two share it)
 --   Guild.complete              true only when as many rows were read as the server says the guild has.
+--   Guild.online[key] = bool, Guild.class[key] = "WARRIOR"  (offline members are on the roster too: the
+--                                Members view's online column and dimmed names)
 -- Decisions that drop data (a member left) need a complete roster, so a half-loaded one can't delete anyone.
 ---@class Proff.Guild
-local Guild = { members = {}, byGuid = {}, firsts = {}, complete = false, at = 0, key = nil }
+local Guild = { members = {}, byGuid = {}, firsts = {}, online = {}, class = {}, complete = false, at = 0, key = nil }
 ns.Guild = Guild
 
 local waiting, timeoutAt
 
 local function Read(stale)
     local total = ns.Read(GetNumGuildMembers) or 0
-    local members, byGuid, firsts, read = {}, {}, {}, 0
+    local members, byGuid, firsts, online, class, read = {}, {}, {}, {}, {}, 0
     for i = 1, total do
-        local name = ns.Read(GetGuildRosterInfo, i)
-        local guid = ns.Plain((select(17, GetGuildRosterInfo(i))))
-        local key = ns.NormalizeName(name)
+        local r = { pcall(GetGuildRosterInfo, i) }
+        local key = r[1] and ns.NormalizeName(ns.Plain(r[2]))
+        local guid = r[1] and ns.Plain(r[18])
         if key then
             members[key] = true
+            online[key] = ns.Plain(r[10]) and true or false
+            local file = ns.Plain(r[12])
+            class[key] = type(file) == "string" and file or nil
             read = read + 1
             if type(guid) == "string" and guid:find("^Player%-") then byGuid[guid] = key end
             local first = key:match("^(%S+)")
             if first then firsts[first] = firsts[first] == nil and key or false end
         end
     end
-    Guild.members, Guild.byGuid, Guild.firsts = members, byGuid, firsts
+    Guild.members, Guild.byGuid, Guild.firsts, Guild.online, Guild.class = members, byGuid, firsts, online, class
     Guild.at, Guild.key = ns.Now(), ns.GuildKey()
     Guild.complete = not stale and total > 0 and read == total
     local guids = 0

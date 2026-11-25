@@ -13,12 +13,14 @@ return function(test, H)
         w:Settle()
         return w, ola
     end
-    local function Members(ola)
+    -- The Members view open, sorted by name (it opens sorted by who's online; keep: left so).
+    local function Members(ola, keep)
         ola:OpenProfession(197)
         ola:OpenGuildTab()
         local tabs = ola.ns.GuildTab:Cover().tabs
         tabs[2]:Click()
         ola.world:Run(0.5)
+        if not keep then ola.ns.GuildMembers.nameHead:Click() end
         return ola.ns.GuildMembers
     end
     -- The rows in view: "name: cell cell ..." (cells "-" when empty).
@@ -61,12 +63,16 @@ return function(test, H)
 
     test("members: a slim column per profession, skill in the cell, nothing without; the server's roster restored", function()
         local w, ola = World()
-        local M = Members(ola)
+        local M = Members(ola, true)
         local names = {}
         for _, c in ipairs(M.columns) do names[#names + 1] = c.name end
         H.eq(table.concat(names, ", "), "Alchemy, Blacksmithing, Enchanting, Tailoring")
+        H.eq(Shown(ola), "Ola Nord: - - - 150 | Arne Dahl: 250 - - - | Kari Berg: 280 - 120 - | Per Smed: - 75 - -"
+            .. " | Siri Dahl: 280 - - -", "who's online first at first (the user, 2026-11-25), then by name")
+        H.ok(M.dotHead.sorted:IsShown())
+        M.nameHead:Click()
         H.eq(Shown(ola), "Arne Dahl: 250 - - - | Kari Berg: 280 - 120 - | Ola Nord: - - - 150 | Per Smed: - 75 - -"
-            .. " | Siri Dahl: 280 - - -", "by name at first")
+            .. " | Siri Dahl: 280 - - -", "the name head: by name")
         H.eq(M.count.text, "5 members")
         H.eq(next(ola.skillOpen), nil, "the headers we opened, collapsed again")
         H.eq(ola:Logged("Skills", "expanded: 4 professions, 6 member rows, 4 headers expanded"), 1)
@@ -104,6 +110,10 @@ return function(test, H)
         M.nameHead:Click()
         H.eq(Shown(ola):match("^[^:]+"), "Arne Dahl")
         H.ok(M.nameHead.sorted:IsShown())
+        -- A sort by a profession nobody shows any more: back to the default, online.
+        M.sort = 999
+        M:Refresh()
+        H.eq(M.sort, "online")
     end)
 
     test("asked of the server once a minute at most; without its members, the ranks Proff stored", function()
@@ -120,10 +130,13 @@ return function(test, H)
         ola.ns.GuildTab:ShowView("members")
         w:Run(1)
         H.eq(ola.skillQueries, asked + 1)
-        -- A server that keeps the members to itself, or answers nothing: what Proff stored (rank with recipes).
-        -- (the server's headers still give every profession its column)
-        for _, q in ipairs({ { { noSkillRows = true }, "Kari Berg: - - 150 - | Ola Nord: - - - 150" },
-            { { guildRecipes = false }, "Kari Berg: 150 - | Ola Nord: - 150" } }) do
+        -- A server that keeps the members to itself, or answers nothing, and no guild club: what Proff stored (rank
+        -- with recipes). (the server's headers still give every profession its column)
+        -- With the club (every member's two primaries, offline too, skill unknown): everyone, "?" where unknown.
+        for _, q in ipairs({ { { noSkillRows = true, noClub = true }, "Kari Berg: - - 150 - | Ola Nord: - - - 150" },
+            { { guildRecipes = false, noClub = true }, "Kari Berg: 150 - | Ola Nord: - 150" },
+            { { noSkillRows = true }, "Arne Dahl: ? - - - | Kari Berg: ? - 150 - | Ola Nord: - - - 150 | Per Smed: - ? - -"
+                .. " | Siri Dahl: ? - - -" } }) do
             local w2, kari = World(q[1])
             kari:ClickLink("Kari Berg", 333)
             Members(kari)
@@ -132,7 +145,7 @@ return function(test, H)
             H.eq(next(kari.skillOpen), nil, "collapsed again")
         end
         -- Recipes stored but no skill known: "?", and sorted under every known skill.
-        local w3, siri = World({ guildRecipes = false })
+        local w3, siri = World({ guildRecipes = false, noClub = true })
         siri:ClickLink("Kari Berg", 333)
         siri:Bucket().members["Kari Berg"].profs[333].rank = nil
         local M = Members(siri)
@@ -145,6 +158,49 @@ return function(test, H)
         w4:Settle()
         Members(per)
         H.eq(per.ns.GuildMembers.empty.text, "You're not in a guild.")
+    end)
+
+    test("offline members listed too, greyed; a green dot for who's online, and that column sorts them first", function()
+        -- (the stub's other players are offline; clients online)
+        local w = H.World()
+        w:AddPlayer("Arne Dahl", { profs = { [171] = { 2330 } } })
+        local kari = w:AddClient("Kari Berg", { profs = { [333] = { 7418 } } })
+        local ola = w:AddClient("Ola Nord", { profs = { [197] = { 2387 } } })
+        w.quirks.noSkillRows = true -- (the server's profession roster: online members only on Forever; here none)
+        w:Settle()
+        local M = Members(ola)
+        H.eq(Shown(ola), "Arne Dahl: ? - - | Kari Berg: - ? - | Ola Nord: - - 150", "Arne from the club alone")
+        H.ok(ola:Logged("Skills", "club: 3 members") >= 1)
+        local function Row(name)
+            for _, row in ipairs(M.rows) do if row.data and row.data.who == name then return row end end
+        end
+        H.match(Row("Arne Dahl").name.text, "^|cff808080Arne Dahl|r$", "offline: grey")
+        H.no(Row("Arne Dahl").dot:IsShown())
+        H.ok(Row("Ola Nord").dot:IsShown())
+        H.ok(Row("Kari Berg").dot:IsShown())
+        H.eq(Row("Ola Nord").name.points[1][4], 20, "the name after the dot column")
+        M.dotHead:Click()
+        H.eq(Shown(ola), "Kari Berg: - ? - | Ola Nord: - - 150 | Arne Dahl: ? - -")
+        H.ok(M.dotHead.sorted:IsShown())
+        H.no(M.nameHead.sorted:IsShown())
+        M.dotHead:Run("OnEnter")
+        H.eq(ola.env.GameTooltip:Said(), "Online | Click: sort by it")
+        -- Kari logs out: the roster says so (asked again after the interval), and she sorts with the offline.
+        kari:Logout()
+        w:Run(61)
+        ola.ns.GuildTab:ShowView("recipes")
+        ola.ns.GuildTab:ShowView("members")
+        w:Run(2)
+        H.eq(Shown(ola), "Ola Nord: - - 150 | Arne Dahl: ? - - | Kari Berg: - ? -")
+        H.ok(M.dotHead.sorted:IsShown(), "still sorted by online")
+        -- No guild club on the client: Arne (offline, nothing stored) isn't known.
+        local w2 = H.World()
+        w2.quirks.noClub, w2.quirks.noSkillRows = true, true
+        w2:AddPlayer("Arne Dahl", { profs = { [171] = { 2330 } } })
+        local per = w2:AddClient("Per Smed", { profs = { [197] = { 2387 } } })
+        w2:Settle()
+        Members(per)
+        H.eq(Shown(per), "Per Smed: - 150", "(Alchemy's column from the server's headers)")
     end)
 
     test("skills colored by band; Forever's 1 for a primary profession is 'unknown', a stored rank wins", function()

@@ -17,11 +17,15 @@ local ns = select(2, ...)
 -- lists primary professions only (no Cooking, Fishing, First Aid), so a skill of 1 or less is read as "has it, skill
 -- unknown" (m.has); a rank Proff stored takes its place (Skills:Table), and secondaries come from Proff alone.
 --
+-- That roster lists online members only (2026-11-25: 44 rows with 22 online). Every member's two primaries,
+-- offline too, come from the guild's club (C_Club, Blizzard's guild window's source: profession1ID/2ID on a
+-- member's info, rank 1 as above; seen for offline members 2026-11-25): Skills:ReadClub, with the same interval.
+--
 -- GUILD_TRADESKILL_UPDATE is heard only while a query is out. Nothing is saved: the server's answer is fresh each
 -- session. Skills:Table merges in the skill levels Proff stored with recipes (Core/Recipes.lua's rank), the higher
 -- of the two, so a member is listed even when the server's roster doesn't say.
 ---@class Proff.Skills
-local Skills = { profs = {}, members = {}, at = 0, busy = false }
+local Skills = { profs = {}, members = {}, club = {}, at = 0, clubAt = 0, busy = false }
 ns.Skills = Skills
 
 local Plain = ns.Plain
@@ -194,9 +198,46 @@ ns.Bus:On("STORED", Skills, function(_, guild, who, line)
     if line ~= 0 and who == ns.PlayerKey() and guild == ns.GuildKey() then Skills:Own() end
 end)
 
+-- Every guild member's primary professions from the guild's club: { [who] = { [line] = rank } }, and how many
+-- members were read; nil without C_Club or a guild club.
+function Skills.ReadClub()
+    if type(C_Club) ~= "table" then return nil end
+    local club = ns.Read(C_Club.GetGuildClubId)
+    local ids = club and ns.Read(C_Club.GetClubMembers, club)
+    if type(ids) ~= "table" then return nil end
+    local out, n = {}, 0
+    for _, id in ipairs(ids) do
+        local info = ns.Read(C_Club.GetMemberInfo, club, Plain(id))
+        local who = type(info) == "table" and ns.NormalizeName(Plain(info.name))
+        if who then
+            n = n + 1
+            local has = {}
+            for k = 1, 2 do
+                local line, rank = Plain(info["profession" .. k .. "ID"]), Plain(info["profession" .. k .. "Rank"])
+                local name = Plain(info["profession" .. k .. "Name"])
+                if type(line) == "number" and line > 0 then
+                    has[line] = type(rank) == "number" and rank or 1
+                    if type(name) == "string" and name ~= "" and not Skills.names[line] then Skills.names[line] = name end
+                end
+            end
+            out[who] = has
+        end
+    end
+    return out, n
+end
+
 -- Asks the server (force: whatever the interval). Answers come as Bus SKILLS.
 function Skills:Refresh(force)
-    if self.busy or not IsInGuild() or type(QueryGuildRecipes) ~= "function" then return false end
+    if not IsInGuild() then return false end
+    if force or ns.Now() - self.clubAt >= ns.Config.SKILLS_INTERVAL then
+        local club, n = Skills.ReadClub()
+        if club then
+            self.club, self.clubAt = club, ns.Now()
+            ns.Log("Skills", "club: %d members", n)
+            ns.Bus:Fire("SKILLS")
+        end
+    end
+    if self.busy or type(QueryGuildRecipes) ~= "function" then return false end
     if not force and ns.Now() - self.at < ns.Config.SKILLS_INTERVAL then return false end
     if not ns.Events:On("GUILD_TRADESKILL_UPDATE", Skills, OnUpdate) then return false end
     self.busy = true
@@ -212,7 +253,7 @@ end
 -- The Members view's table: columns (professions, by name) and rows (members with any of them):
 --   columns: { { line, name, icon }, ... }
 --   rows:    { { who, class, online, skills = { [line] = skill }, has = { [line] = true }, recipes = { [line] = n } }, ... }
---            (has: the server says they have it, skill unknown)
+--            (has: the server says they have it, skill unknown; online: the guild roster's, nil if not on it)
 -- The server's skills, and for what it doesn't say, the rank stored with a member's recipes.
 function Skills:Table(guild)
     local cols, rows, byWho = {}, {}, {}
@@ -236,6 +277,14 @@ function Skills:Table(guild)
         r.class, r.online = m.class, m.online
         for line, skill in pairs(m.skills) do r.skills[line] = skill end
         for line in pairs(m.has or {}) do r.has[line] = true end
+    end
+    for who, has in pairs(self.club) do
+        for line, rank in pairs(has) do
+            local r = Row(who)
+            r.has[line] = true
+            if rank > 1 and rank > (r.skills[line] or 0) then r.skills[line] = rank end
+            Col(line, Skills.Name(line), ns.Read(C_TradeSkillUI.GetTradeSkillTexture, line))
+        end
     end
     local g = guild and ns.DB:Guild(guild)
     for who, m in pairs(g and g.members or {}) do
@@ -261,18 +310,52 @@ function Skills:Table(guild)
         if sa ~= sb then return sb end
         return tostring(a.name) < tostring(b.name)
     end)
-    -- (rows without any profession aren't shown)
+    -- (rows without any profession aren't shown; online and class from the guild roster, which has everyone)
+    local roster = ns.Guild.key == guild
     local out = {}
-    for _, r in ipairs(rows) do if next(r.skills) or next(r.recipes) or next(r.has) then out[#out + 1] = r end end
+    for _, r in ipairs(rows) do
+        if next(r.skills) or next(r.recipes) or next(r.has) then
+            if roster and ns.Guild.online[r.who] ~= nil then r.online = ns.Guild.online[r.who] end
+            if roster then r.class = ns.Guild.class[r.who] or r.class end
+            out[#out + 1] = r
+        end
+    end
     return list, out
 end
 
+-- What Proff knows of one member's profession (the guild window's detail panel): its skill (the highest of a
+-- link's and their sheet's; nil unknown), max, recipes stored (n, nil for none) and when they were seen.
+function Skills:Known(guild, who, line)
+    local g = guild and ns.DB:Guild(guild)
+    local m = g and g.members[who]
+    local p = m and m.profs[line]
+    local l = m and m.skills and m.skills.lines[line]
+    local skill, max
+    if p and type(p.rank) == "number" and p.rank > 1 then skill, max = p.rank, p.max end
+    if l and l.r > 1 and l.r > (skill or 0) then skill, max = l.r, l.m end
+    return { skill = skill, max = max, n = p and p.n, seen = p and (p.seen or p.at) }
+end
+
+-- The primary professions Proff knows a member has (stored recipes or their sheet), sorted.
+function Skills:Primaries(guild, who)
+    local g = guild and ns.DB:Guild(guild)
+    local m = g and g.members[who]
+    local set, list = {}, {}
+    for line in pairs(m and m.profs or {}) do set[line] = true end
+    for line in pairs(m and m.skills and m.skills.lines or {}) do set[line] = true end
+    for line in pairs(set) do if not Skills.SECONDARY[line] then list[#list + 1] = line end end
+    table.sort(list)
+    return list
+end
+
 -- Sorted in place: by a profession (its holders first, highest skill first, then by first name; the rest by
--- name), or by name (line nil).
+-- name), by "online" (online first, then by name), or by name (line nil).
 function Skills.Sort(rows, line)
     local function First(who) return (who:match("^(%S+)") or who):lower(), who:lower() end
     table.sort(rows, function(a, b)
-        if line then
+        if line == "online" then
+            if (a.online == true) ~= (b.online == true) then return a.online == true end
+        elseif line then
             -- (has it, skill unknown: ranked under every known skill)
             local sa = a.skills[line] or ((a.recipes[line] or a.has[line]) and -1)
             local sb = b.skills[line] or ((b.recipes[line] or b.has[line]) and -1)

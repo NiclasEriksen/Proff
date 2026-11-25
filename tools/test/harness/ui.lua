@@ -147,3 +147,36 @@ end
 
 -- The saved bucket of this client's guild (ProffDB.guilds[name]).
 function Client:Bucket() return self.ns.DB:Guild(self.world.guildName) end
+
+-- A member as the guild's club gives them (C_Club.GetMemberInfo): retail's ClubMemberInfo's fields that matter.
+function Client:ClubMember(p)
+    local lines = {}
+    for line in pairs(p.profs) do if not H.PROFESSIONS[line].secondary then lines[#lines + 1] = line end end
+    table.sort(lines)
+    local online = self.world.byName[p.name] ~= nil and self.world.byName[p.name].online
+    local info = { name = p.name, guid = p.guid, classID = 1, level = 60, presence = online and 1 or 3, clubType = 2 }
+    for k = 1, 2 do
+        if lines[k] then
+            info["profession" .. k .. "ID"] = lines[k]
+            info["profession" .. k .. "Name"] = H.PROFESSIONS[lines[k]].name
+            info["profession" .. k .. "Rank"] = 1
+        end
+    end
+    return info
+end
+
+-- The guild window (Blizzard's, loaded on first use) shown.
+function Client:OpenGuildRoster()
+    local cf = rawget(self.env, "CommunitiesFrame") or P.CommunitiesFrame(self)
+    cf:Show()
+    return cf
+end
+
+-- A member's name clicked in the guild window: the detail panel shows them (what Blizzard does).
+function Client:ShowMember(name)
+    local cf = self:OpenGuildRoster()
+    local d = cf.GuildMemberDetailFrame
+    d:DisplayMember(215736082, self:ClubMember(self.world.players[name]))
+    d:Show()
+    return d
+end
