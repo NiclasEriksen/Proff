@@ -10,6 +10,8 @@ local ns = select(2, ...)
 --            one learned recipe's every field, ProfessionsFrame's tabs and children (for the Guild tab)
 --   guild    the server's guild profession system (QueryGuildRecipes, QueryGuildMembersForRecipe): answered or not,
 --            saved Probe.GUILD_WAIT seconds later (not part of the plain `/proff probe`)
+--   communities  the guild window (CommunitiesFrame): the member list's rows and the member detail panel, part
+--            by part, a row's member info, the methods to hook (open the roster and click a name first)
 --   link     (on until "link off" or a /reload) every profession window that opens: each event with its time,
 --            and the window read at each, into probe.link (the newest Probe.KEEP windows): click a guildmate's
 --            profession link in chat with it on
@@ -375,6 +377,102 @@ function Probe:Guild()
     return out
 end
 
+-- One frame's parts, for placing ours among them: each region and child (to `depth` levels) as a line of its key,
+-- type, size, first point, shown, mouse, and its text or texture.
+local function Describe(f, depth, path, out)
+    out = out or {}
+    local function Point(r)
+        local p, rel, rp, x, y = ns.Read(Field(r, "GetPoint"), r, 1)
+        if not p then return "unplaced" end
+        local relName = rel == f and "parent" or (rel and (KeyOf(f, rel) or ns.Read(Field(rel, "GetName"), rel))) or "screen"
+        return ("%s %s %s %.0f %.0f"):format(tostring(p), tostring(relName), tostring(rp), tonumber(x) or 0, tonumber(y) or 0)
+    end
+    local function Line(r, key)
+        local w, h = ns.Read(Field(r, "GetSize"), r)
+        local kind = tostring(ns.Read(Field(r, "GetObjectType"), r))
+        local extra = ""
+        if kind == "FontString" or kind == "Button" or kind == "EditBox" then
+            extra = " text=" .. Show(ns.Read(Field(r, "GetText"), r))
+        elseif kind == "Texture" then
+            extra = " tex=" .. Show(ns.Read(Field(r, "GetAtlas"), r) or ns.Read(Field(r, "GetTexture"), r))
+        end
+        out[#out + 1] = ("%s %s %s %.0fx%.0f [%s] shown=%s mouse=%s%s"):format(key, kind,
+            tostring(ns.Read(Field(r, "GetName"), r) or ""), tonumber(w) or 0, tonumber(h) or 0, Point(r),
+            tostring(ns.Read(Field(r, "IsShown"), r)), tostring(ns.Read(Field(r, "IsMouseEnabled"), r)), extra)
+    end
+    local regions = { pcall(function() return f:GetRegions() end) }
+    for i = 2, math.min(#regions, 30) do Line(regions[i], path .. "." .. (KeyOf(f, regions[i]) or ("r" .. (i - 1)))) end
+    local children = { pcall(function() return f:GetChildren() end) }
+    for i = 2, math.min(#children, 30) do
+        local key = path .. "." .. (KeyOf(f, children[i]) or (i - 1))
+        Line(children[i], key)
+        if depth > 1 then Describe(children[i], depth - 1, key, out) end
+    end
+    return out
+end
+Probe.Describe = Describe
+
+-- The guild window (CommunitiesFrame on Forever, as Guild Roster Manager uses): the member list's columns and a
+-- row's parts, a row's member info (does it carry professions?), the member detail panel's parts, the methods
+-- we'd hook, and what Guild Roster Manager has open beside it. Open the guild roster (and a member's details,
+-- by clicking a name) first.
+Probe.HOOKS = { list = { "RefreshLayout", "RefreshListDisplay", "UpdateMemberList", "SetGuildColumnIndex",
+    "UpdateProfessionDisplay", "GetSelectedClubId" }, row = { "Init", "SetMember", "RefreshExpandedColumns",
+    "OnEnter", "UpdatePresence", "UpdateNameFrame" }, detail = { "DisplayMember", "UpdateNoteText" } }
+function Probe:Communities()
+    local cf = rawget(_G, "CommunitiesFrame")
+    local out = {}
+    if not cf then
+        out.frame = "no CommunitiesFrame (open the guild window first)"
+        Save("communities", out)
+        return out
+    end
+    Part(out, "frame", function()
+        out.frame = ("shown=%s size=%s mode=%s club=%s"):format(Try(Field(cf, "IsShown"), cf), Try(Field(cf, "GetSize"), cf),
+            Show(Field(cf, "displayMode")), Try(Field(cf, "GetSelectedClubId"), cf))
+        out.grm = { loaded = type(rawget(_G, "GRM_UI")), mouseover = type(rawget(_G, "GRM_UI")) == "table"
+            and Try(Field(rawget(_G, "GRM_UI").GRM_Mouseover or {}, "IsShown"), rawget(_G, "GRM_UI").GRM_Mouseover) or "none" }
+    end)
+    local list = Field(cf, "MemberList")
+    Part(out, "list", function()
+        if not list then out.list = "no MemberList"; return end
+        out.list = ("size=%s shown=%s columns=%s expanded=%s"):format(Try(Field(list, "GetSize"), list),
+            Try(Field(list, "IsShown"), list), Show(Field(list, "columnInfo")), Show(Field(list, "expandedDisplay")))
+        out.listParts = Describe(list, 2, "list")
+        out.hooks = {}
+        for _, k in ipairs(self.HOOKS.list) do out.hooks["list." .. k] = type(Field(list, k)) end
+    end)
+    Part(out, "rows", function()
+        local box = list and Field(list, "ScrollBox")
+        if not box then out.rows = "no ScrollBox"; return end
+        local frames = ns.Read(Field(box, "GetFrames"), box)
+        if type(frames) ~= "table" then
+            frames = {}
+            pcall(Field(box, "ForEachFrame"), box, function(b) frames[#frames + 1] = b end)
+        end
+        out.rows = ("%d rows in view"):format(#frames)
+        out.hooks = out.hooks or {}
+        for i = 1, math.min(2, #frames) do
+            local row = frames[i]
+            out["row" .. i] = { size = Try(Field(row, "GetSize"), row), member = Show(Field(row, "memberInfo")),
+                parts = Describe(row, 2, "row") }
+            for _, k in ipairs(self.HOOKS.row) do out.hooks["row." .. k] = type(Field(row, k)) end
+        end
+    end)
+    Part(out, "detail", function()
+        local d = Field(cf, "GuildMemberDetailFrame")
+        if not d then out.detail = "no GuildMemberDetailFrame"; return end
+        out.detail = ("shown=%s size=%s point=%s"):format(Try(Field(d, "IsShown"), d), Try(Field(d, "GetSize"), d),
+            (Try(Field(d, "GetPoint"), d, 1):gsub("table: %x+", "frame")))
+        out.detailParts = Describe(d, 2, "detail")
+        out.hooks = out.hooks or {}
+        for _, k in ipairs(self.HOOKS.detail) do out.hooks["detail." .. k] = type(Field(d, k)) end
+    end)
+    ns.Log("Probe", "communities: %s; %s; %s", tostring(out.frame), tostring(out.rows), tostring(out.detail))
+    Save("communities", out)
+    return out
+end
+
 -- The link watch: each profession window from its first event to its close, every event read.
 local watching, current
 local function OnWindowEvent(_, event, ...)
@@ -407,7 +505,7 @@ function Probe:Link(arg)
 end
 function Probe:Watching() return watching end
 
-local SECTIONS = { api = "Api", roster = "Roster", window = "Window", guild = "Guild" }
+local SECTIONS = { api = "Api", roster = "Roster", window = "Window", guild = "Guild", communities = "Communities" }
 function Probe:Run(arg)
     if not ns.Debug.enabled then ns.Debug:SetEnabled(true, ns.Debug.echo) end
     if arg == "clear" then
@@ -416,7 +514,7 @@ function Probe:Run(arg)
     elseif arg == "link" or arg == "link off" then
         return self:Link(arg == "link off" and "off" or nil)
     elseif arg and not SECTIONS[arg] then
-        return ns.Print("No probe section \"" .. arg .. "\": api, roster, window, guild, link [off], verify, clear.")
+        return ns.Print("No probe section \"" .. arg .. "\": api, roster, window, guild, communities, link [off], verify, clear.")
     end
     -- (a section that throws is saved as its error, and the others still run)
     for _, name in ipairs(arg and { arg } or { "api", "roster", "window" }) do

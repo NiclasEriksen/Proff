@@ -93,6 +93,48 @@ return function(test, H)
         H.eq(bare:Logged("Capture", "no C_TradeSkillUI"), 1)
     end)
 
+    test("the communities probe: the guild window's list rows and detail panel, part by part", function()
+        local w, ola = World()
+        ola:Slash("probe communities")
+        H.eq(Probe(ola).communities.frame, "no CommunitiesFrame (open the guild window first)")
+        -- A stand-in for the guild window (the stub client has none yet): a list with two rows, a detail panel.
+        local env = ola.env
+        local cf = env.CreateFrame("Frame", "CommunitiesFrame", env.UIParent)
+        rawset(env, "CommunitiesFrame", cf)
+        cf.MemberList = env.CreateFrame("Frame", nil, cf)
+        local box = env.CreateFrame("Frame", nil, cf.MemberList)
+        cf.MemberList.ScrollBox = box
+        local rows = {}
+        for i = 1, 3 do
+            local row = env.CreateFrame("Button", nil, box)
+            row:SetSize(300, 20)
+            row.NameFrame = env.CreateFrame("Frame", nil, row)
+            row.NameFrame.Name = row.NameFrame:CreateFontString(nil, "ARTWORK")
+            row.NameFrame.Name:SetText("Kari Berg")
+            row.NameFrame:SetPoint("LEFT", row, "LEFT", 4, 0)
+            row.memberInfo = { name = "Kari Berg", profession1ID = 171, profession1Rank = 1 }
+            rows[i] = row
+        end
+        box.ForEachFrame = function(_, fn) for _, r in ipairs(rows) do fn(r) end end
+        cf.GuildMemberDetailFrame = env.CreateFrame("Frame", nil, cf)
+        cf.GuildMemberDetailFrame.DisplayMember = function() end
+        ola:Slash("probe communities")
+        local p = Probe(ola).communities
+        H.eq(p.rows, "3 rows in view")
+        H.match(p.row1.member, "profession1ID=171")
+        H.match(table.concat(p.row1.parts, "\n"), "row%.NameFrame%.Name FontString  0x0 %[unplaced%] shown=true .* text=\"Kari Berg\"")
+        H.match(table.concat(p.row1.parts, "\n"), "row%.NameFrame Frame  0x0 %[LEFT parent LEFT 4 0%]")
+        H.eq(p.row2 ~= nil and p.row3 == nil, true, "two rows described")
+        H.eq(p.hooks["detail.DisplayMember"], "function")
+        H.eq(p.hooks["row.Init"], "nil")
+        H.match(p.detail, "^shown=true")
+        H.eq(p.grm.loaded, "nil")
+        H.eq(ola:Logged("Probe", "communities: shown=true"), 1)
+        box.GetFrames = function() return { rows[1] } end
+        ola:Slash("probe communities")
+        H.eq(Probe(ola).communities.rows, "1 rows in view")
+    end)
+
     test("the link probe: each window's events and reads, the newest KEEP", function()
         local w, ola = World()
         ola:Slash("probe link")
