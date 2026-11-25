@@ -46,6 +46,11 @@ Verify.ITEMS = {
     { "skills:own", "your own professions' levels read (secondaries too)", "Skills", "^own levels: %d+ " },
     { "sync:skills", "a guildmate's skill levels stored", "Sync", "^skills from .*: .*, %a+" },
     { "ui:tooltip", "hover a recipe in the Guild tab: its spell tooltip", "Page", "^tooltip: the spell's" },
+    { "members:club", "open the Members view: every member's professions from the guild club, offline too", "Skills",
+        "^club: [1-9]%d* members" },
+    { "detail:icons", "click a member in the guild window: their profession icons on the detail panel", "Detail",
+        "^shown: .*, [1-9]%d* professions" },
+    { "detail:tooltip", "hover one of those icons", "Detail", "^tooltip: " },
 }
 Verify.BY = {}
 for _, item in ipairs(Verify.ITEMS) do

@@ -14,7 +14,11 @@ who can craft something:
 Or open any profession and click the **Guild** tab under the profession tabs on the window's right: every recipe the guild knows, searchable by
 recipe, crafter or ingredient, with a profession filter. Hover a recipe for its tooltip and who knows it.
 
-The **Members** tab lists every guild member's professions and skill levels, sortable by profession.
+The **Members** tab lists every guild member's professions and skill levels, offline members too (greyed), sortable by
+profession or by who's online.
+
+In Blizzard's guild window, clicking a member shows small icons of their professions on the detail panel; hover one
+for their skill and how many of their recipes Proff knows.
 
 Guildmates running Proff share what they know quietly in the background: one person opening a link is enough for
 everyone, and each Proff user's own skill levels reach the rest of the guild. Nothing is posted in chat. Only guild

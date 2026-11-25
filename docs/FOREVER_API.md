@@ -129,6 +129,17 @@ with the date and build; one that matters to every addon goes in Dyreparken's do
 - **Relay sync works between two real clients** (2026-11-24, build 71037, our log): our hello, their index, our
   request for 6 entries, 5 professions and a skill sheet back within 7 s; ours they lacked pushed (4 D, 1 K, the
   biggest 192 bytes in one part). Relayed recipes were all in the client's spell cache: named at once (155 of 155).
+- **The guild profession roster lists online members only** (2026-11-25, build 71037: 44 member rows with 22 of
+  109 online, about two professions each; the rows changed with who was online, 25 to 51 over two days).
+- **The guild window is retail's `CommunitiesFrame`** (`/proff probe communities`, 2026-11-25): 814x426; the member
+  list's columns Lvl, Class, Name, Zone, Rank, Note; each row has `memberInfo`, retail's ClubMemberInfo, **with
+  `profession1ID/Name/Rank` and `profession2...`** (rank 1, as the roster's), and the methods `Init`, `SetMember`.
+  `GuildMemberDetailFrame` (212x260, shown to the window's right when a name is clicked) has `DisplayMember`:
+  Name at TOPLEFT 17,-18, Level under it, the close button at TOPRIGHT, the zone, rank, last online and the notes
+  below, Remove and Group Invite at the bottom. Guild Roster Manager (also for Forever, Interface 16001) uses the
+  same frames, takes every member's professions from `C_Club.GetMemberInfo` (offline members too: its saved data,
+  77 offline members with professions), replaces the panel's OnShow/OnHide/OnKeyDown with `SetScript`, and adds
+  a line above the panel, a button below it and its own panel to the right (UI/MemberDetail.lua's header).
 - Addon messages: Dyreparken's "Addon messages" section (255 bytes, 10 per prefix +1/s, Trial accounts can't send,
   "First Surname" senders, GUILD only). Proff's Core/Comm.lua follows it.
 
@@ -143,6 +154,8 @@ way (tools/test/harness.lua's header), so both are tested.
 | Addon messages on GUILD reach guildmates with our prefix registered | no sync at all (a Trial account: never sends) | `sync:sent`, `sync:heard` |
 | `C_Spell.GetSpellName(recipeID)` names a recipe (perhaps "Enchanting: <name>": the prefix is dropped), `RequestLoadSpellData` answers with `SPELL_DATA_LOAD_RESULT`; `GetRecipeSchematic` works for a recipe whose profession isn't open | relayed recipes show as "#id" (Core/Spells.lua) | `sync:names` |
 | `GetProfessions()` / `GetProfessionInfo(i)` give every profession's level and its base skill line (Cooking 185, Fishing 356, First Aid 129 if listed: Forever's slots may leave First Aid out) | no own skill sheet, nothing else changes (`noProfessions`); secondary columns sort among the primaries if their lines differ | `skills:own` |
+| `C_Club.GetGuildClubId` / `GetClubMembers` / `GetMemberInfo` list every guild member, offline too, with their two primaries (`profession1ID`..), without the guild window open | offline members only with what Proff stored (`noClub`) | `members:club` |
+| `GuildMemberDetailFrame:DisplayMember(clubId, memberInfo)` runs for each member shown (hooked) | no icons on the panel | `detail:icons` |
 | `C_Item.RequestLoadItemDataByID` answers with `ITEM_DATA_LOAD_RESULT` (id, success) | names only for cached items (`itemsLost`: given up after `ITEM_WAIT`, asked again when the tab opens) | `capture:itemnames` |
 
 ## How to probe

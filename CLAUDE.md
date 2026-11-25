@@ -17,6 +17,8 @@ you learn something new about the client, add it there with the date and build.
   ingredient), a profession filter, a help icon, a dense list with icons and the recipe's spell tooltip.
   Reagents are stored per recipe (schema 2) and their names learned (Core/Items.lua) for ingredient search.
   Not seen in game yet: `/proff probe verify`'s `ui:*` items and `probe window`'s `frame` say how it sits.
+- Later rounds (2026-11-23..25): relay sync, the Members view, skill sheets; v0.1.0 released 2026-11-24. Then
+  offline members in the Members view (online column) and profession icons on the guild window's detail panel.
 
 ## Working rules
 
@@ -72,14 +74,15 @@ check on every push.
   ui, assert; the stub client API in `env/*.lua`). `frames.lua` has the widget types' methods (an EditBox's,
   a ScrollFrame's: one a type lacks throws) and regions; `blizzard.lua` the templates (P.TEMPLATES: a missing
   one throws, as the client does), Forever's `ProfessionsFrame` (profession side tabs, no tab bar), and `H.Menu(dropdown)`.
-- A player's actions: `c:ClickLink(name, line)`, `c:OpenProfession(line)`, `c:OpenNPC(line)`, `c:CloseProfession()`,
+- A player's actions: `c:ClickLink(name, line)`, `c:OpenProfession(line)`, `c:ShowMember(name)` (the guild window's
+  detail panel; `c:OpenGuildRoster()`), `c:OpenNPC(line)`, `c:CloseProfession()`,
   `c:Slash("search potion")`; the Guild tab: `c:OpenGuildTab()`, `c:Type("potion")`, a frame's `f:Press()`
   (a mouse press: OnMouseDown, then the click), `f:Run("OnEnter")` (a hover). Read results as a player would:
   `c:Mark()` then `c:Said()`, `c:Holders(recipeName)`, `c:Shown()` (the list's rows in view),
   `GameTooltip:Said()`, `c:Logged(module, text)`, `c:Listening(event)`.
 - How the client might differ from retail is a `w.quirks` flag (`linkedName`, `noIsLinked`, `rosterGuid`,
   `guidName`, `rosterIgnored`, `rosterPartial`, `linkSync`, `itemsCached`, `itemsLost`, `spellTooltip`,
-  `noSideTabs`, `missingTemplates`, `guildRecipes`; a client's `trial`). Addon messages: `w.wire`, `w:Sent(kind,
+  `noSideTabs`, `missingTemplates`, `guildRecipes`, `noSkillRows`, `skillAsync`, `noClub`; a client's `trial`). Addon messages: `w.wire`, `w:Sent(kind,
   from, since)`, `w:Mark()`, `w:Inject(sender, text)` (an outsider or a forger), `w.throttled`: test both ways for every assumption in docs/FOREVER_API.md's table.
 - Specs: `tools/test/spec/NN_area.lua`, each `return function(test, H) ... end`. The runner fails a test whose
   clients hit a Lua error (`c:TakeErrors()` for one caused on purpose), wrote a stray global or printed an unfilled
@@ -119,8 +122,8 @@ Core/Pack.lua       compact text: numbers, recipe sets (first id + gaps), a set'
 Core/Guild.lua      the roster on demand: members, GUIDs, first names, complete; Resolve (whose is a link)
 Core/Comm.lua       addon messages: kind + tab fields, S/F/M/L chunks, a paced outbox, members only, silent
 Core/Recipes.lua    the store: Store (a profession whole), Forget, Prune (a complete roster)
-Core/Skills.lua     the server's guild profession roster (expanded and collapsed back); skill sheets (ours, relayed);
-                    Table, Sort
+Core/Skills.lua     the server's guild profession roster (expanded and collapsed back), the guild club's members'
+                    primaries (offline too); skill sheets (ours, relayed); Table, Sort, Known
 Core/Index.lua      search: Search, Holders, Member, Professions, Stats (pure over DB: tools/db.lua uses it)
 Core/Capture.lua    the link click (SetItemRef hook), the window's events, reading it, Admit/Hold
 Core/Spells.lua     names, icons, reagents of relayed recipes, from their spells (SPELL_DATA_LOAD_RESULT while asked)
@@ -130,6 +133,7 @@ UI/GuildPage.lua    the Guild tab's page: search, profession filter, help, the v
 UI/GuildMembers.lua the Members view: a slim column per profession (icon head), skills, sort by a column
 UI/GuildTab.lua     the side tab under the profession tabs, the page covering the window, its views (Recipes,
                     Members: tabs under the window), leaving it (hooks only)
+UI/MemberDetail.lua the guild window's member detail panel: profession icons, hover for skill and recipes
 Dev/                Errors, Probe (/proff probe), Verify (/proff probe verify), Commands (/proff debug, probe)
 Main.lua            ADDON_LOADED / PLAYER_LOGIN / settled phases
 tools/              check.sh, lint_config.lua, types.lua, log.lua, db.lua, test/
@@ -156,6 +160,12 @@ tools/              check.sh, lint_config.lua, types.lua, log.lua, db.lua, test/
   own profession is stored, kept as `members[who].skills`, and relayed by everyone like a profession (sync's `K`,
   key line 0). The Members view takes the highest of the server's, a link's and a sheet's. `GetProfessions`
   lists First Aid too (129, seen 2026-11-24).
+- The Members view lists offline members too, their names grey, with a thin first column holding a green dot for who's
+  online, sortable and the default sort (the user, 2026-11-25). Every member's primaries come from the guild club (C_Club); members
+  with no profession known still aren't listed.
+- Blizzard's guild window (the user, 2026-11-25: "only the detail panel for now"): the member detail panel gets
+  small icons of the member's primaries, hover for skill and recipes. Never collide with Guild Roster Manager, and
+  never use it: hooksecurefunc on Blizzard's methods only, our parts inside Blizzard's panel (UI/MemberDetail.lua).
 - Whose a linked window is: the link's GUID on the roster, then the window's name, then `GetPlayerInfoByGUID`'s, then
   a first name only one member has. A first name two members share is "couldn't tell", not a guess.
 
